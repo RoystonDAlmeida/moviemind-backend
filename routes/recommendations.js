@@ -1,11 +1,19 @@
 // routes/recommendations.js
 import express from 'express';
+import { body, validationResult } from 'express-validator';
 import { supabase } from '../config/supabaseClient.js'; // Use public client for RPC
 import { getEmbedderInstance, isEmbedderReady } from '../services/embeddingService.js';
 
 const router = express.Router();
 
-router.post('/', async (req, res) => {
+// Add validation/sanitization middleware chain
+router.post('/', [
+  body('query')
+    .trim() // Remove leading/trailing whitespace
+    .notEmpty().withMessage('Query parameter cannot be empty.')
+    .isString().withMessage('Query parameter must be a string.')
+    .escape(), // Escape HTML entities like <, >, &, ', "
+  ], async (req, res) => {
 
   // 1. Check if the embedding service is ready
   if (!isEmbedderReady()) {
@@ -13,7 +21,13 @@ router.post('/', async (req, res) => {
     return res.status(503).json({ error: 'Recommendation service is temporarily unavailable. Please try again later.' });
   }
 
-  // 2. Get the embedder instance
+  // 3. Check for validation errors
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  // 4. Get the embedder instance
   const embedder = getEmbedderInstance();
   if (!embedder) {
       console.error('Recommendation request failed: Embedder instance is null despite being marked as ready.');
@@ -21,18 +35,14 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const { query } = req.body;
+    // Input is already validated and sanitized by the middleware
+    const sanitizedQuery = req.body.query;
 
-    // 3. Validate input query
-    if (!query || typeof query !== 'string' || query.trim() === '') {
-      return res.status(400).json({ error: 'Invalid or missing query parameter.' });
-    }
-
-    // 4. Generate embeddings for the query
-    const output = await embedder(query.trim(), { pooling: 'mean', normalize: true });
+    // 6. Generate embeddings for the query
+    const output = await embedder(sanitizedQuery, { pooling: 'mean', normalize: true });
     const embedding = Array.from(output.data);
 
-    // 5. Call Supabase RPC function to find matching movies
+    // 7. Call Supabase RPC function to find matching movies
     const rpcParams = {
       query_embedding: embedding,
       match_threshold: 0.3,
@@ -46,7 +56,7 @@ router.post('/', async (req, res) => {
       return res.status(500).json({ error: 'Failed to retrieve movie matches.' });
     }
 
-    // 6. Send the recommendations
+    // 8. Send the recommendations
     res.json({ recommendations: movies || [] }); 
 
   } catch (error) {
