@@ -1,5 +1,6 @@
 // routes/library.js
 import express from 'express';
+import { body, param, validationResult } from 'express-validator';
 import { createSupabaseUserClient } from '../config/supabaseClient.js';
 
 const router = express.Router();
@@ -50,16 +51,33 @@ router.get('/', async (req, res) => {
 });
 
 // --- POST /api/library/add ---
-router.post('/add', async (req, res) => {
+router.post('/add', [
+
+  // Validate the movie object itself exists
+  body('movie').isObject().withMessage('Movie data must be an object.'),
+
+  // Validate and sanitize individual fields within the movie object
+  body('movie.id').notEmpty().withMessage('Movie ID is required.'),
+  body('movie.title').trim().notEmpty().withMessage('Movie title is required.'),
+  body('movie.poster').optional({ checkFalsy: true }).trim().isURL().withMessage('Invalid poster URL format.'),
+  body('movie.year').optional({ checkFalsy: true }).isInt({ min: 1888, max: new Date().getFullYear() + 5 }).withMessage('Invalid year.'),
+
+  // Assuming genres is an array of strings. If it's just a string, adjust validation.
+  body('movie.genres').optional({ checkFalsy: true }).isArray().withMessage('Genres must be an array.'),
+  body('movie.genres.*').optional({ checkFalsy: true }).trim().escape(), // Sanitize each string in the array
+
+  ], async (req, res) => {
+
   const clerkUserId = req.auth.userId; // Get verified user ID
+
+  // Check for validation errors
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
 
   try {
     const { movie } = req.body;
-
-    // Basic validation of the movie object
-    if (!movie || typeof movie !== 'object' || !movie.id || !movie.title) {
-      return res.status(400).json({ error: 'Invalid or missing movie data in request body.' });
-    }
 
     // Create a user-scoped Supabase client
     const supabaseUserClient = createSupabaseUserClient(req.token);
@@ -101,16 +119,22 @@ router.post('/add', async (req, res) => {
 });
 
 // --- DELETE /api/library/:movieId ---
-router.delete('/:movieId', async (req, res) => {
+router.delete('/:movieId', [
+    // Adjust validation based on your actual movieId format (e.g., isInt(), isUUID())
+    param('movieId').notEmpty().withMessage('Movie ID parameter is required.') //.isInt().withMessage('Movie ID must be an integer.'),
+  ], async (req, res) => {
+    
   const clerkUserId = req.auth.userId;
-  const { movieId } = req.params;
 
-  // Validate movieId parameter
-  if (!movieId) {
-    return res.status(400).json({ error: 'Movie ID is required in the URL path.' });
+  // Check for validation errors
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
   }
 
   try {
+    const validatedMovieId = req.params.movieId; // Use validated param
+
     // Create a user-scoped Supabase client
     const supabaseUserClient = createSupabaseUserClient(req.token);
 
@@ -119,7 +143,7 @@ router.delete('/:movieId', async (req, res) => {
       .from('user_library')
       .delete()
       .eq('user_id', clerkUserId)
-      .eq('movie_id', movieId);
+      .eq('movie_id', validatedMovieId);
 
     if (error) {
       console.error(`Supabase delete error for user ${clerkUserId}, movie ${movieId}:`, error);
@@ -132,10 +156,9 @@ router.delete('/:movieId', async (req, res) => {
     res.status(200).json({ message: 'Movie successfully removed from library' });
 
   } catch (error) {
-    console.error(`Unexpected error in DELETE /api/library/${movieId} for user ${clerkUserId}:`, error);
+    console.error(`Unexpected error in DELETE /api/library/${req.params.movieId} for user ${clerkUserId}:`, error);
     res.status(500).json({ error: 'Internal server error while removing movie.' });
   }
 });
-
 
 export default router;
