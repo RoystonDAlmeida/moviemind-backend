@@ -6,9 +6,9 @@ import { config } from './config/index.js'; // --- Configuration ---
 import { getUserAndToken } from './middleware/auth.js'; // --- Middleware ---
 import apiRoutes from './routes/index.js';  // --- API Routes ---
 import './services/embeddingService.js';   // --- Services ---
-// TODO: Import and configure helmet, rate-limiter, stricter CORS middleware
+// TODO: Import and configure helmet, stricter CORS middleware
 // import helmet from 'helmet';
-// import rateLimit from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
 
@@ -26,9 +26,16 @@ app.use(express.json());
 // It verifies JWT and attaches req.auth and req.token if valid.
 app.use(getUserAndToken);
 
-// 5. Rate Limiting (Recommended for public APIs)
-// const apiLimiter = rateLimit({ ... });
-// app.use('/api/', apiLimiter);
+// 5. Rate Limiting: Apply to all API routes
+const apiLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 100, // Limit each IP to 100 requests per `windowMs`
+	standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+	message: 'Too many requests from this IP, please try again after 15 minutes', // Message sent when limit is exceeded
+});
+
+app.use('/api', apiLimiter); // Apply the limiter to all routes starting with /api
 
 // --- Mount API Routes ---
 // All routes defined in the 'routes' directory will be available under /api
