@@ -6,8 +6,7 @@ import { config } from './config/index.js'; // --- Configuration ---
 import { getUserAndToken } from './middleware/auth.js'; // --- Middleware ---
 import apiRoutes from './routes/index.js';  // --- API Routes ---
 import './services/embeddingService.js';   // --- Services ---
-// TODO: Import and configure helmet, stricter CORS middleware
-// import helmet from 'helmet';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
@@ -17,7 +16,7 @@ const app = express();
 app.use(cors());
 
 // 2. Security Headers (Recommended)
-// app.use(helmet());
+app.use(helmet());
 
 // 3. JSON Body Parser: Parse incoming JSON requests
 app.use(express.json());
